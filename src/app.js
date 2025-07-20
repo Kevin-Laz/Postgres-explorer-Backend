@@ -16,4 +16,7 @@ app.use('/tables', tablesRoutes);
 app.use('/data', dataRoutes);
 app.use('/query', queryRoutes);
 
+const errorHandler = require('./middlewares/errorHandler');
+app.use(errorHandler);
+
 module.exports = app;

@@ -25,6 +25,12 @@ const createTable = async (req, res, next) => {
     const primaryKeys = columns.filter(col => col.isPrimary === true);
     if (primaryKeys.length > 1) return next(new ValidationError('Solo se permite una columna como clave primaria.'));
 
+    //Evitar duplicados en nombres
+    const columnNames = columns.map(c => c.name);
+    const nameSet = new Set(columnNames);
+    if (nameSet.size !== columnNames.length) {
+      return next(new ValidationError('Hay columnas con nombres duplicados.'));
+    }
     //Construir la tabla
     const columnDefs = columns.map((col, index) => {
       const validated = validateColumn(col, index);

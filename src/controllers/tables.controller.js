@@ -13,34 +13,72 @@ const createTable = async (req, res, next) => {
 
     validateDatabaseUrl(databaseUrl);
     validateTableName(name);
+
     if (!Array.isArray(columns)) {
       return next(new ValidationError('Las columnas no se han definido correctamente'));
     }
+
     prisma = createPrismaClient(databaseUrl);
-    
-    //Verificar si la tabla ya existe
     await throwIfTableExists(prisma, name);
 
-    //Validar clave unica
-    const primaryKeys = columns.filter(col => col.isPrimary === true);
-    if (primaryKeys.length > 1) return next(new ValidationError('Solo se permite una columna como clave primaria.'));
-
-    //Evitar duplicados en nombres
+    // Validar nombres únicos
     const columnNames = columns.map(c => c.name);
     const nameSet = new Set(columnNames);
     if (nameSet.size !== columnNames.length) {
       return next(new ValidationError('Hay columnas con nombres duplicados.'));
     }
-    //Construir la tabla
+
+    // Validar referencias (claves foráneas)
+    for (const col of columns) {
+      if (col.references) {
+        const { table, column } = col.references;
+        if (!table || !column) {
+          return next(new ValidationError(`La columna "${col.name}" tiene una referencia inválida.`));
+        }
+        // Validar que tabla y columna existan
+        await ensureTableExists(prisma, table);
+        const result = await prisma.$queryRawUnsafe(`
+          SELECT column_name FROM information_schema.columns 
+          WHERE table_name = '${table}' AND column_name = '${column}'
+        `);
+        if (result.length === 0) {
+          return next(new ValidationError(`La clave foránea de "${col.name}" referencia a "${table}(${column})", pero no existe.`));
+        }
+      }
+    }
+
+    // Validar clave primaria compuesta (puede haber más de una)
+    const primaryKeys = columns.filter(col => col.isPrimary === true);
+    if (primaryKeys.length === 0) {
+      return next(new ValidationError('Debe definir al menos una clave primaria.'));
+    }
+
+    // Construir definiciones de columnas
     const columnDefs = columns.map((col, index) => {
       const validated = validateColumn(col, index);
       const { name, type, isNullable, isPrimary } = validated;
-      const nullable = isNullable ? '' : 'NOT NULL';
-      const primary = isPrimary ? 'PRIMARY KEY' : '';
-      return `"${name}" ${type} ${nullable} ${primary}`.trim();
-    }).join(', ');
+      const nullable = isNullable ? '' : 'NOT NULL'; // no usar NULL explícito
+      return `"${name}" ${type} ${nullable}`.trim();
+    });
 
-    const query = `CREATE TABLE "${name}" (${columnDefs});`;
+    // Construir constraint PRIMARY KEY compuesto
+    const pkCols = columns
+      .filter(col => col.isPrimary)
+      .map(col => `"${col.name}"`);
+    columnDefs.push(`PRIMARY KEY (${pkCols.join(', ')})`);
+
+    // Construir claves foráneas
+    for (const col of columns) {
+      if (col.references) {
+        const ref = col.references;
+        columnDefs.push(
+          `FOREIGN KEY ("${col.name}") REFERENCES "${ref.table}"("${ref.column}")`
+        );
+      }
+    }
+
+    // Ejecutar la creación
+    const query = `CREATE TABLE "${name}" (${columnDefs.join(', ')});`;
     await prisma.$executeRawUnsafe(query);
 
     res.status(200).json({ message: `Tabla "${name}" creada exitosamente.` });
@@ -51,6 +89,7 @@ const createTable = async (req, res, next) => {
     if (prisma) await prisma.$disconnect();
   }
 };
+
 
 const deleteTable = async (req, res, next) => {
   let prisma;

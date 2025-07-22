@@ -56,10 +56,13 @@ const createTable = async (req, res, next) => {
     // Construir definiciones de columnas
     const columnDefs = columns.map((col, index) => {
       const validated = validateColumn(col, index);
-      const { name, type, isNullable, isPrimary } = validated;
-      const nullable = isNullable ? '' : 'NOT NULL'; // no usar NULL explícito
-      return `"${name}" ${type} ${nullable}`.trim();
-    });
+      const { name, type, isNullable, isPrimary, default: defaultValue, check, unique } = validated;
+      const nullable = isNullable ? '' : 'NOT NULL';
+      const defaultClause = defaultValue !== undefined ? `DEFAULT ${typeof defaultValue === 'string' ? `'${defaultValue}'` : defaultValue}` : '';
+      const checkClause = check ? `CHECK (${check})` : '';
+      const uniqueClause = unique ? 'UNIQUE' : '';
+      return `"${name}" ${type} ${nullable} ${defaultClause} ${checkClause} ${uniqueClause}`.trim();
+    }); // --M → Falta fortalezer la validación de check 
 
     // Construir constraint PRIMARY KEY compuesto
     const pkCols = columns

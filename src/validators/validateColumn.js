@@ -46,11 +46,25 @@ function validateColumn(column, index) {
     throw new ValidationError(`${context}: Una clave primaria no puede ser NULL`);
   }
 
+  if ('default' in column && typeof column.default !== 'string' && typeof column.default !== 'number') {
+    throw new ValidationError(`${context}: "default" debe ser string o numérico`);
+  }
+  if ('check' in column && typeof column.check !== 'string') {
+    throw new ValidationError(`${context}: "check" debe ser una expresión SQL en texto`);
+  }
+  if ('unique' in column && typeof column.unique !== 'boolean') {
+    throw new ValidationError(`${context}: "unique" debe ser booleano`);
+  }
+
+
   return {
     name,
     type: type.toUpperCase(),
     isNullable: !!isNullable,
     isPrimary: !!isPrimary,
+    default: column.default,
+    check: column.check,
+    unique: !!column.unique
   };
 }
 

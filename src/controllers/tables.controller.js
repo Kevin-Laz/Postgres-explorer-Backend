@@ -151,4 +151,177 @@ const getSchema = async (req, res, next) => {
   }
 };
 
-module.exports = { createTable, deleteTable, getSchema };
+const listTables = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl } = req.body;
+    validateDatabaseUrl(databaseUrl);
+
+    prisma = createPrismaClient(databaseUrl);
+
+    const query = `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
+    `;
+    const result = await prisma.$queryRawUnsafe(query);
+    res.json(result.map(row => row.table_name));
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const getTableDetails = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl } = req.body;
+    const { tableName } = req.params;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(tableName);
+
+    prisma = createPrismaClient(databaseUrl);
+    await ensureTableExists(prisma, tableName);
+
+    const query = `
+      SELECT column_name, data_type, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = '${tableName}'
+      ORDER BY ordinal_position;
+    `;
+    const result = await prisma.$queryRawUnsafe(query);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const addColumn = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl, tableName, column } = req.body;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(tableName);
+
+    const validated = validateColumn(column, 0);
+
+    prisma = createPrismaClient(databaseUrl);
+    await ensureTableExists(prisma, tableName);
+
+    const { name, type, isNullable, default: defaultValue, check, unique } = validated;
+    const nullable = isNullable ? '' : 'NOT NULL';
+    const defaultClause = defaultValue !== undefined ? `DEFAULT ${typeof defaultValue === 'string' ? `'${defaultValue}'` : defaultValue}` : '';
+    const checkClause = check ? `CHECK (${check})` : '';
+    const uniqueClause = unique ? 'UNIQUE' : '';
+
+    const query = `
+      ALTER TABLE "${tableName}"
+      ADD COLUMN "${name}" ${type} ${nullable} ${defaultClause} ${checkClause} ${uniqueClause};
+    `;
+    await prisma.$executeRawUnsafe(query);
+    res.json({ message: `Columna "${name}" añadida a "${tableName}".` });
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const deleteColumn = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl } = req.body;
+    const { tableName, columnName } = req.params;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(tableName);
+
+    prisma = createPrismaClient(databaseUrl);
+    await ensureTableExists(prisma, tableName);
+
+    const query = `
+      ALTER TABLE "${tableName}" DROP COLUMN IF EXISTS "${columnName}" CASCADE;
+    `;
+    await prisma.$executeRawUnsafe(query);
+    res.json({ message: `Columna "${columnName}" eliminada de "${tableName}".` });
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const renameColumn = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl, newColumnName } = req.body;
+    const { tableName, oldColumnName } = req.params;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(tableName);
+
+    if (!newColumnName || typeof newColumnName !== 'string') {
+      return next(new ValidationError('Nuevo nombre de columna inválido'));
+    }
+
+    prisma = createPrismaClient(databaseUrl);
+    await ensureTableExists(prisma, tableName);
+
+    const query = `
+      ALTER TABLE "${tableName}" RENAME COLUMN "${oldColumnName}" TO "${newColumnName}";
+    `;
+    await prisma.$executeRawUnsafe(query);
+    res.json({ message: `Columna renombrada a "${newColumnName}" en "${tableName}".` });
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const renameTable = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl, newTableName } = req.body;
+    const { tableName } = req.params;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(tableName);
+    validateTableName(newTableName);
+
+    prisma = createPrismaClient(databaseUrl);
+    await ensureTableExists(prisma, tableName);
+
+    const query = `ALTER TABLE "${tableName}" RENAME TO "${newTableName}";`;
+    await prisma.$executeRawUnsafe(query);
+    res.json({ message: `Tabla "${tableName}" renombrada a "${newTableName}".` });
+  } catch (error) {
+    if (error instanceof AppError) return next(error);
+    next(new DatabaseError(error.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+module.exports = {
+  createTable,
+  deleteTable,
+  getSchema,
+  listTables,
+  getTableDetails,
+  addColumn,
+  deleteColumn,
+  renameColumn,
+  renameTable
+};
+

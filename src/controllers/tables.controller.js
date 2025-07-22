@@ -53,12 +53,31 @@ const createTable = async (req, res, next) => {
       return next(new ValidationError('Debe definir al menos una clave primaria.'));
     }
 
+    // Detectar si se usará el formato UUID para la clave primaria
+    const needsGenRandomUUID = columns.some(
+      col => col.default && typeof col.default === 'string' && col.default.toLowerCase().includes('gen_random_uuid')
+    );
+
+    // Verificar si la función está disponible en la base de datos
+    if (needsGenRandomUUID) {
+      const result = await prisma.$queryRawUnsafe(`
+        SELECT proname FROM pg_proc WHERE proname = 'gen_random_uuid'
+      `);
+      if (!Array.isArray(result) || result.length === 0) {
+        return next(new ValidationError(
+          `Para usar gen_random_uuid() como valor por defecto, primero debes habilitar la extensión con: CREATE EXTENSION IF NOT EXISTS "pgcrypto";`
+        ));
+      }
+    }
+
     // Construir definiciones de columnas
     const columnDefs = columns.map((col, index) => {
       const validated = validateColumn(col, index);
       const { name, type, isNullable, isPrimary, default: defaultValue, check, unique } = validated;
       const nullable = isNullable ? '' : 'NOT NULL';
-      const defaultClause = defaultValue !== undefined ? `DEFAULT ${typeof defaultValue === 'string' ? `'${defaultValue}'` : defaultValue}` : '';
+      const defaultClause = defaultValue !== undefined
+        ? `DEFAULT ${typeof defaultValue === 'string' && !/^gen_random_uuid\(\)$/i.test(defaultValue) ? `'${defaultValue}'` : defaultValue}`
+        : '';
       const checkClause = check ? `CHECK (${check})` : '';
       const uniqueClause = unique ? 'UNIQUE' : '';
       return `"${name}" ${type} ${nullable} ${defaultClause} ${checkClause} ${uniqueClause}`.trim();

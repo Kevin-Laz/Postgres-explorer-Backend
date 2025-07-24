@@ -11,10 +11,12 @@ app.use(express.json());
 const tablesRoutes = require('./routes/tables.route');
 const dataRoutes = require('./routes/data.route');
 const queryRoutes = require('./routes/query.route');
+const keysRoutes = require('./routes/keys.route');
 
 app.use('/tables', tablesRoutes);
 app.use('/data', dataRoutes);
 app.use('/query', queryRoutes);
+app.use('/keys', keysRoutes);
 
 const errorHandler = require('./middlewares/errorHandler');
 app.use(errorHandler);

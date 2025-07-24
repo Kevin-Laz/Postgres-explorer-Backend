@@ -8,7 +8,11 @@ const ALLOWED_TYPES = [
 const SIMPLE_TYPES = ['INT', 'INTEGER', 'BIGINT', 'TEXT', 'BOOLEAN', 'DATE', 'TIMESTAMP', 'SERIAL', 'UUID'];
 const PARAM_TYPES = ['VARCHAR', 'CHAR', 'DECIMAL', 'NUMERIC', 'FLOAT'];
 
-const ALLOWED_FUNCTIONS = ['gen_random_uuid()'];
+const ALLOWED_FUNCTIONS = {
+      'UUID': ['gen_random_uuid()'],
+      'TIMESTAMP': ['now()'],
+      'DATE': ['now()']
+    };
 
 
 function validateColumn(column, index) {
@@ -55,14 +59,16 @@ function validateColumn(column, index) {
       throw new ValidationError(`${context}: "default" debe ser texto o numérico`);
     }
 
+    const typeUpper = column.type.toUpperCase().split('(')[0];
+
     if (typeof value === 'string') {
-      const isAllowedFunction = ALLOWED_FUNCTIONS.includes(value.toLowerCase());
+      const isAllowedFunction = ALLOWED_FUNCTIONS[typeUpper] && ALLOWED_FUNCTIONS[typeUpper].includes(value.toLowerCase());
 
       // Si no es una función permitida, debe ser un string plano (valor, no expresión SQL)
       if (!isAllowedFunction) {
         // Evitar expresiones en formato de funcion
         if (/\w+\(.*\)/.test(value)) {
-          throw new ValidationError(`${context}: "default" solo permite funciones seguras como gen_random_uuid()`);
+          throw new ValidationError(`${context}: la función "${value}" no está permitida como valor por defecto para el tipo ${typeUpper}`);
         }
       }
     }

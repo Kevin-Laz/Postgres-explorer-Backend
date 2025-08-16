@@ -1,11 +1,13 @@
 const createPrismaClient = require('../utils/createPrismaClient');
 const { ValidationError, DatabaseError, AppError } = require('../errors');
 const { ensureTableExists } = require('../validators/ensureTableExists');
-const { throwIfTableExists } = require('../validators/throwIfTableExists');
-const validateColumn = require('../validators/validateColumn');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
 
+
+function isValidIdentifier(name) {
+  return typeof name === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(name);
+}
 
 const listForeignKeys = async (req, res, next) => {
   let prisma;
@@ -19,7 +21,7 @@ const listForeignKeys = async (req, res, next) => {
     prisma = createPrismaClient(databaseUrl);
     await ensureTableExists(prisma, tableName);
 
-    const query = `
+    const result = await prisma.$queryRaw`
       SELECT
         tc.constraint_name,
         kcu.column_name,
@@ -31,10 +33,9 @@ const listForeignKeys = async (req, res, next) => {
       JOIN information_schema.constraint_column_usage AS ccu
         ON ccu.constraint_name = tc.constraint_name
       WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_name = '${tableName}';
+        AND tc.table_name = ${tableName};
     `;
 
-    const result = await prisma.$queryRawUnsafe(query);
     res.json(result);
   } catch (error) {
     if (error instanceof AppError) return next(error);
@@ -52,10 +53,15 @@ const addForeignKey = async (req, res, next) => {
 
     validateDatabaseUrl(databaseUrl);
     validateTableName(tableName);
+    if (!isValidIdentifier(columnName)) return next(new ValidationError('Nombre de columna inválido.'));
+
 
     if (!reference?.table || !reference?.column) {
       return next(new ValidationError('La referencia debe incluir "table" y "column".'));
     }
+
+    validateTableName(reference.table);
+    if (!isValidIdentifier(reference.column)) return next(new ValidationError('Columna de referencia inválida.'));
 
     prisma = createPrismaClient(databaseUrl);
     await ensureTableExists(prisma, tableName);
@@ -85,17 +91,18 @@ const dropForeignKey = async (req, res, next) => {
 
     validateDatabaseUrl(databaseUrl);
     validateTableName(tableName);
+    if (!isValidIdentifier(columnName)) return next(new ValidationError('Nombre de columna inválido.'));
 
     prisma = createPrismaClient(databaseUrl);
     await ensureTableExists(prisma, tableName);
 
     // Obtener el nombre de la constraint de la clave foránea
-    const constraintResult = await prisma.$queryRawUnsafe(`
+    const constraintResult = await prisma.$queryRaw`
       SELECT constraint_name
       FROM information_schema.key_column_usage
-      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
-      AND position_in_unique_constraint IS NOT NULL
-    `);
+      WHERE table_name = ${tableName} AND column_name = ${columnName}
+        AND position_in_unique_constraint IS NOT NULL
+    `;
 
     if (!Array.isArray(constraintResult) || constraintResult.length === 0) {
       return next(new ValidationError(`No se encontró clave foránea sobre la columna "${columnName}" en la tabla "${tableName}".`));
@@ -123,22 +130,27 @@ const updateForeignKey = async (req, res, next) => {
 
     validateDatabaseUrl(databaseUrl);
     validateTableName(tableName);
+    if (!isValidIdentifier(columnName)) return next(new ValidationError('Nombre de columna inválido.'));
 
     if (!newReference?.table || !newReference?.column) {
       return next(new ValidationError('Referencia inválida. Debe incluir "table" y "column".'));
     }
+
+    validateTableName(newReference.table);
+    if (!isValidIdentifier(newReference.column)) return next(new ValidationError('Columna de referencia inválida.'));
+
 
     prisma = createPrismaClient(databaseUrl);
     await ensureTableExists(prisma, tableName);
     await ensureTableExists(prisma, newReference.table);
 
     // 1. Eliminar constraint actual
-    const constraintResult = await prisma.$queryRawUnsafe(`
+    const constraintResult = await prisma.$queryRaw`
       SELECT constraint_name
       FROM information_schema.key_column_usage
-      WHERE table_name = '${tableName}' AND column_name = '${columnName}'
-      AND position_in_unique_constraint IS NOT NULL
-    `);
+      WHERE table_name = ${tableName} AND column_name = ${columnName}
+        AND position_in_unique_constraint IS NOT NULL
+    `;
 
     if (constraintResult.length > 0) {
       const constraintName = constraintResult[0].constraint_name;

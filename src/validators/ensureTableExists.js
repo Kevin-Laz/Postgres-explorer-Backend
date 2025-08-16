@@ -8,18 +8,13 @@ const { ValidationError } = require('../errors');
  * @param {string} tableName - nombre de la tabla a verificar
  */
 async function ensureTableExists(prisma, tableName) {
-  const query = `
+  const result = await prisma.$queryRaw`
     SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' AND table_name = $name
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = ${tableName}
     ) AS "exists";
   `;
-
-  const result = await prisma.$queryRawUnsafe(
-    query.replace('$name', `'${tableName}'`)
-  );
-
-  if (!result[0]?.exists) {
+  if (!Array.isArray(result) || !result[0]?.exists) {
     throw new ValidationError(`La tabla "${tableName}" no existe.`);
   }
 }

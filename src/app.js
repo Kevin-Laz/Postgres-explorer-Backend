@@ -13,12 +13,14 @@ const dataRoutes = require('./routes/data.route');
 const queryRoutes = require('./routes/query.route');
 const keysRoutes = require('./routes/keys.route');
 const connectionRoutes = require('./routes/connection.route');
+const schemaRoutes = require('./routes/schema.route');
 
 app.use('/tables', tablesRoutes);
 app.use('/data', dataRoutes);
 app.use('/query', queryRoutes);
 app.use('/keys', keysRoutes);
 app.use('/connection', connectionRoutes);
+app.use('/schema', schemaRoutes);
 
 const errorHandler = require('./middlewares/errorHandler');
 app.use(errorHandler);

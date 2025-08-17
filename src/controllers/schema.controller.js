@@ -1,7 +1,9 @@
 const createPrismaClient = require('../utils/createPrismaClient');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const { validateTableName } = require('../validators/tableNameValidator');
 const { ValidationError, DatabaseError, AppError } = require('../errors');
 const applyCommands = require('../schemaEngine/applyCommands');
+const { getSchemaSnapshot } = require('../schemaEngine/snapshot');
 
 const validateCommands = async (req, res, next) => {
   let prisma;
@@ -62,4 +64,23 @@ const executeCommands = async (req, res, next) => {
   }
 };
 
-module.exports = { validateCommands, executeCommands };
+const getSnapshot = async (req, res, next) => {
+  let prisma;
+  try {
+    const { databaseUrl, tableName } = req.body || {};
+    validateDatabaseUrl(databaseUrl);
+    if (tableName) validateTableName(tableName);
+
+    prisma = createPrismaClient(databaseUrl);
+    const out = await getSchemaSnapshot(prisma, { tableName: tableName || null });
+
+    res.status(200).json(out);
+  } catch (err) {
+    if (err instanceof AppError) return next(err);
+    next(new DatabaseError(err.message));
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+module.exports = { validateCommands, executeCommands, getSnapshot };

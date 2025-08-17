@@ -3,6 +3,7 @@ const { ValidationError, DatabaseError, AppError } = require('../errors');
 const { ensureTableExists } = require('../validators/ensureTableExists');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const applyCommands = require('../schemaEngine/applyCommands');
 
 
 function isValidIdentifier(name) {
@@ -48,7 +49,7 @@ const listForeignKeys = async (req, res, next) => {
 const addForeignKey = async (req, res, next) => {
   let prisma;
   try {
-    const { databaseUrl, reference } = req.body;
+    const { databaseUrl, reference, onDelete, onUpdate, constraintName } = req.body;
     const { tableName, columnName } = req.params;
 
     validateDatabaseUrl(databaseUrl);
@@ -64,14 +65,24 @@ const addForeignKey = async (req, res, next) => {
     if (!isValidIdentifier(reference.column)) return next(new ValidationError('Columna de referencia inválida.'));
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
-    await ensureTableExists(prisma, reference.table);
+    
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{
+        op: 'ADD_FOREIGN_KEY',
+        table: tableName,
+        column: columnName,
+        ref: { table: reference.table, column: reference.column },
+        onDelete, onUpdate, constraintName
+      }]
+    });
 
-    const query = `
-      ALTER TABLE "${tableName}"
-      ADD FOREIGN KEY ("${columnName}") REFERENCES "${reference.table}"("${reference.column}");
-    `;
-    await prisma.$executeRawUnsafe(query);
+    if (!result.success) {
+      const err = result.failed?.[0] || {};
+      return next(new DatabaseError(err.message || 'No se pudo agregar la clave foránea.'));
+    }
 
     res.json({ message: `Clave foránea agregada a "${columnName}" en "${tableName}".` });
   } catch (error) {
@@ -94,24 +105,18 @@ const dropForeignKey = async (req, res, next) => {
     if (!isValidIdentifier(columnName)) return next(new ValidationError('Nombre de columna inválido.'));
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
+    
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'DROP_FOREIGN_KEY', table: tableName, column: columnName }]
+    });
 
-    // Obtener el nombre de la constraint de la clave foránea
-    const constraintResult = await prisma.$queryRaw`
-      SELECT constraint_name
-      FROM information_schema.key_column_usage
-      WHERE table_name = ${tableName} AND column_name = ${columnName}
-        AND position_in_unique_constraint IS NOT NULL
-    `;
-
-    if (!Array.isArray(constraintResult) || constraintResult.length === 0) {
-      return next(new ValidationError(`No se encontró clave foránea sobre la columna "${columnName}" en la tabla "${tableName}".`));
+    if (!result.success) {
+      const err = result.failed?.[0] || {};
+      return next(new DatabaseError(err.message || 'No se pudo eliminar la clave foránea.'));
     }
-
-    const constraintName = constraintResult[0].constraint_name;
-
-    const query = `ALTER TABLE "${tableName}" DROP CONSTRAINT "${constraintName}";`;
-    await prisma.$executeRawUnsafe(query);
 
     res.json({ message: `Clave foránea eliminada de "${columnName}" en "${tableName}".` });
   } catch (error) {
@@ -125,7 +130,7 @@ const dropForeignKey = async (req, res, next) => {
 const updateForeignKey = async (req, res, next) => {
   let prisma;
   try {
-    const { databaseUrl, newReference } = req.body;
+    const { databaseUrl, newReference, onDelete, onUpdate, constraintName } = req.body;
     const { tableName, columnName } = req.params;
 
     validateDatabaseUrl(databaseUrl);
@@ -141,29 +146,25 @@ const updateForeignKey = async (req, res, next) => {
 
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
-    await ensureTableExists(prisma, newReference.table);
+    
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{
+        op: 'UPDATE_FOREIGN_KEY',
+        table: tableName,
+        column: columnName,
+        ref: { table: newReference.table, column: newReference.column },
+        onDelete, onUpdate, constraintName
+      }]
+    });
 
-    // 1. Eliminar constraint actual
-    const constraintResult = await prisma.$queryRaw`
-      SELECT constraint_name
-      FROM information_schema.key_column_usage
-      WHERE table_name = ${tableName} AND column_name = ${columnName}
-        AND position_in_unique_constraint IS NOT NULL
-    `;
-
-    if (constraintResult.length > 0) {
-      const constraintName = constraintResult[0].constraint_name;
-      await prisma.$executeRawUnsafe(`ALTER TABLE "${tableName}" DROP CONSTRAINT "${constraintName}";`);
+    if (!result.success) {
+      const err = result.failed?.[0] || {};
+      return next(new DatabaseError(err.message || 'No se pudo actualizar la clave foránea.'));
     }
-
-    // 2. Crear nueva constraint
-    const addConstraintQuery = `
-      ALTER TABLE "${tableName}"
-      ADD FOREIGN KEY ("${columnName}") REFERENCES "${newReference.table}"("${newReference.column}");
-    `;
-    await prisma.$executeRawUnsafe(addConstraintQuery);
-
+  
     res.json({ message: `Clave foránea actualizada para "${columnName}" en "${tableName}".` });
   } catch (error) {
     if (error instanceof AppError) return next(error);

@@ -14,7 +14,9 @@ const queryRoutes = require('./routes/query.route');
 const keysRoutes = require('./routes/keys.route');
 const connectionRoutes = require('./routes/connection.route');
 const schemaRoutes = require('./routes/schema.route');
+const requestContext = require('./middlewares/requestContext');
 
+app.use(requestContext);
 app.use('/tables', tablesRoutes);
 app.use('/data', dataRoutes);
 app.use('/query', queryRoutes);

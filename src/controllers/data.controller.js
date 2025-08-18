@@ -3,6 +3,7 @@ const createPrismaClient = require('../utils/createPrismaClient');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { ensureTableExists } = require('../validators/ensureTableExists');
+const { propagateError } = require('../utils/propagateError');
 const { ValidationError, DatabaseError, AppError } = require('../errors');
 
 async function getTableColumns(prisma, table) {
@@ -62,8 +63,7 @@ const insertData = async (req, res, next) => {
 
     res.json(result);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -108,8 +108,7 @@ const getData = async (req, res, next) => {
     res.json(result);
 
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -163,8 +162,7 @@ const updateData = async (req, res, next) => {
     res.json(result[0]);
 
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -196,8 +194,7 @@ const deleteData = async (req, res, next) => {
 
     res.json({ message: `Registro con ID "${id}" eliminado.`, deleted: result[0] });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

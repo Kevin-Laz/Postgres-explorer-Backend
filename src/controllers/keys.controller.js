@@ -3,6 +3,7 @@ const { ValidationError, DatabaseError, AppError } = require('../errors');
 const { ensureTableExists } = require('../validators/ensureTableExists');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const { propagateError } = require('../utils/propagateError');
 const applyCommands = require('../schemaEngine/applyCommands');
 
 
@@ -39,8 +40,7 @@ const listForeignKeys = async (req, res, next) => {
 
     res.json(result);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -81,13 +81,12 @@ const addForeignKey = async (req, res, next) => {
 
     if (!result.success) {
       const err = result.failed?.[0] || {};
-      return next(new DatabaseError(err.message || 'No se pudo agregar la clave foránea.'));
+      return propagateError(err, next);
     }
 
     res.json({ message: `Clave foránea agregada a "${columnName}" en "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -115,13 +114,12 @@ const dropForeignKey = async (req, res, next) => {
 
     if (!result.success) {
       const err = result.failed?.[0] || {};
-      return next(new DatabaseError(err.message || 'No se pudo eliminar la clave foránea.'));
+      return propagateError(err, next);
     }
 
     res.json({ message: `Clave foránea eliminada de "${columnName}" en "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -162,13 +160,12 @@ const updateForeignKey = async (req, res, next) => {
 
     if (!result.success) {
       const err = result.failed?.[0] || {};
-      return next(new DatabaseError(err.message || 'No se pudo actualizar la clave foránea.'));
+      return propagateError(err, next);
     }
   
     res.json({ message: `Clave foránea actualizada para "${columnName}" en "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

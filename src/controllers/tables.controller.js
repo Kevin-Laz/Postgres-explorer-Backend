@@ -5,6 +5,7 @@ const { ensureTableExists } = require('../validators/ensureTableExists');
 const validateColumn = require('../validators/validateColumn');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const { propagateError } = require('../utils/propagateError');
 const applyCommands = require('../schemaEngine/applyCommands');
 
 
@@ -32,13 +33,12 @@ const createTable = async (req, res, next) => {
     if (!result.success) {
       // Unificar el primer error para la respuesta
       const err = result.failed?.[0] || { code: 'create_table_failed', message: 'No se pudo crear la tabla' };
-      return next(new DatabaseError(err.message || 'No se pudo crear la tabla'));
+      return propagateError(err, next);
     }
     res.status(200).json({ message: `Tabla "${name}" creada exitosamente.` });
   
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    return next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -60,8 +60,7 @@ const deleteTable = async (req, res, next) => {
     await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
     res.json({ message: `Tabla "${tableName}" eliminada.` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -92,8 +91,7 @@ const getSchema = async (req, res, next) => {
 
     res.json(result);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -114,8 +112,7 @@ const listTables = async (req, res, next) => {
     `;
     res.json(result.map(row => row.table_name));
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -141,8 +138,7 @@ const getTableDetails = async (req, res, next) => {
     `;
     res.json(result);
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -174,8 +170,7 @@ const addColumn = async (req, res, next) => {
     await prisma.$executeRawUnsafe(query);
     res.json({ message: `Columna "${name}" añadida a "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -198,8 +193,7 @@ const deleteColumn = async (req, res, next) => {
     );
     res.json({ message: `Columna "${columnName}" eliminada de "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -226,8 +220,7 @@ const renameColumn = async (req, res, next) => {
     );
     res.json({ message: `Columna renombrada a "${newColumnName}" en "${tableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -249,8 +242,7 @@ const renameTable = async (req, res, next) => {
     await prisma.$executeRawUnsafe(`ALTER TABLE "${tableName}" RENAME TO "${newTableName}";`);
     res.json({ message: `Tabla "${tableName}" renombrada a "${newTableName}".` });
   } catch (error) {
-    if (error instanceof AppError) return next(error);
-    next(new DatabaseError(error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

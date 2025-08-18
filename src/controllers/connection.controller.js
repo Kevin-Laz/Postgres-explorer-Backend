@@ -1,5 +1,6 @@
 const createPrismaClient = require('../utils/createPrismaClient');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const { propagateError } = require('../utils/propagateError');
 const { DatabaseError, ValidationError } = require('../errors');
 
 const checkConnection = async (req, res, next) => {
@@ -15,8 +16,7 @@ const checkConnection = async (req, res, next) => {
 
     res.json({ success: true, message: 'Conexión exitosa con la base de datos.' });
   } catch (error) {
-    if (error instanceof ValidationError) return next(error);
-    return next(new DatabaseError('No se pudo conectar a la base de datos: ' + error.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

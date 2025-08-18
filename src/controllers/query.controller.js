@@ -1,5 +1,6 @@
 const createPrismaClient = require('../utils/createPrismaClient');
 const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
+const { propagateError } = require('../utils/propagateError');
 const { DatabaseError, ValidationError } = require('../errors');
 
 const executeQuery = async (req, res, next) => {
@@ -16,8 +17,7 @@ const executeQuery = async (req, res, next) => {
     const result = await prisma.$queryRawUnsafe(query);
     res.json(result);
   } catch (err) {
-    if (err instanceof ValidationError) return next(err);
-    next(new DatabaseError(err.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

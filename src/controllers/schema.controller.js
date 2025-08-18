@@ -3,6 +3,7 @@ const { validateDatabaseUrl } = require('../validators/databaseUrlValidator');
 const { validateTableName } = require('../validators/tableNameValidator');
 const { ValidationError, DatabaseError, AppError } = require('../errors');
 const applyCommands = require('../schemaEngine/applyCommands');
+const { propagateError } = require('../utils/propagateError');
 const { getSchemaSnapshot } = require('../schemaEngine/snapshot');
 
 const validateCommands = async (req, res, next) => {
@@ -24,8 +25,7 @@ const validateCommands = async (req, res, next) => {
 
     res.status(result.success ? 200 : 400).json(result);
   } catch (err) {
-    if (err instanceof AppError) return next(err);
-    next(new DatabaseError(err.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -57,8 +57,7 @@ const executeCommands = async (req, res, next) => {
       res.status(200).json(result);
     }
   } catch (err) {
-    if (err instanceof AppError) return next(err);
-    next(new DatabaseError(err.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }
@@ -76,8 +75,7 @@ const getSnapshot = async (req, res, next) => {
 
     res.status(200).json(out);
   } catch (err) {
-    if (err instanceof AppError) return next(err);
-    next(new DatabaseError(err.message));
+    return propagateError(error, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

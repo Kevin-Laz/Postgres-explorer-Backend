@@ -10,6 +10,7 @@ const PG_CODE_MAP = {
   '23502': { code: 'not_null_violation',      hint: 'Proporcione un valor distinto de NULL para la columna indicada.' },
   '23514': { code: 'check_violation',         hint: 'El valor no cumple la restricción CHECK.' },
   '22P02': { code: 'invalid_text_representation', hint: 'Tipo/representación de dato inválida. Convierta/castee el valor.' },
+  '2BP01': { code: 'dependent_objects_still_exist', hint: 'Existen objetos dependientes. Use CASCADE si es intencional.' },
   '42703': { code: 'undefined_column',        hint: 'La columna no existe. Revise el nombre o sincronice el esquema.' },
   '42P01': { code: 'undefined_table',         hint: 'La tabla no existe. Revise el nombre o cree la tabla previamente.' },
   '42P07': { code: 'duplicate_table',         hint: 'La tabla ya existe.' },

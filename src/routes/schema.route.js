@@ -5,8 +5,8 @@ const { validateCommands, executeCommands, getSnapshot } = require('../controlle
 // Validación (dry run siempre)
 router.post('/commands/validate', validateCommands);
 
-// Ejecución (apply)
-router.post('/commands', executeCommands);
+// Ejecutar comandos (all-or-nothing o bestEffort)
+router.post('/commands/execute', executeCommands);
 
 // Snapshot de esquema (opcionalmente por tabla)
 router.post('/snapshot', getSnapshot);

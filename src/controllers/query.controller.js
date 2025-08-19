@@ -17,7 +17,7 @@ const executeQuery = async (req, res, next) => {
     const result = await prisma.$queryRawUnsafe(query);
     res.json(result);
   } catch (err) {
-    return propagateError(error, next);
+    return propagateError(err, next);
   } finally {
     if (prisma) await prisma.$disconnect();
   }

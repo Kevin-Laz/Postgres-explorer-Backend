@@ -22,12 +22,13 @@ function safeLogError(err, req) {
   }
 }
 
-function errorHandler(err, req, res, next) {
+function errorHandler(err, req, res, _next) {
+  const requestId = req?.context?.requestId || null;
+  const out = normalizeError(err, requestId);
+
   safeLogError(err, req);
 
-  const { status, body } = normalizeError(err, req.requestId);
-
-  res.status(status).json(body);
+  return res.status(out.status).json(out.body);
 }
 
 module.exports = errorHandler;

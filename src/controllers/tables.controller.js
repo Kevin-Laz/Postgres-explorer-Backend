@@ -12,14 +12,11 @@ const applyCommands = require('../schemaEngine/applyCommands');
 const createTable = async (req, res, next) => {
   let prisma;
   try {
-    const { name, columns, databaseUrl } = req.body;
+    const { tableName } = req.params;
+    const { databaseUrl, cascade, ifExist } = req.body;
 
     validateDatabaseUrl(databaseUrl);
-    validateTableName(name);
-
-    if (!Array.isArray(columns)) {
-      return next(new ValidationError('Las columnas no se han definido correctamente'));
-    }
+    if (tableName) validateTableName(tableName);
 
     prisma = createPrismaClient(databaseUrl);
     
@@ -27,16 +24,20 @@ const createTable = async (req, res, next) => {
       prisma,
       dryRun: false,
       mode: 'allOrNothing',
-      commands: [{ op: 'CREATE_TABLE', name, columns }]
+      commands: [{
+        op: 'DROP_TABLE',
+        name: tableName,
+        cascade: !!cascade,     // default: false
+        ifExists: !!ifExists    // default: false
+      }]
     });
 
     if (!result.success) {
-      // Unificar el primer error para la respuesta
-      const err = result.failed?.[0] || { code: 'create_table_failed', message: 'No se pudo crear la tabla' };
+      const err = result.failed?.[0] || { code: 'drop_table_failed', message: 'No se pudo eliminar la tabla' };
       return propagateError(err, next);
     }
-    res.status(200).json({ message: `Tabla "${name}" creada exitosamente.` });
-  
+
+    res.json({ message: `Tabla "${tableName}" eliminada.` });
   } catch (error) {
     return propagateError(error, next);
   } finally {
@@ -152,23 +153,19 @@ const addColumn = async (req, res, next) => {
     validateDatabaseUrl(databaseUrl);
     validateTableName(tableName);
 
-    const validated = validateColumn(column, 0);
+    validateColumn(column, 0);
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'ADD_COLUMN', table: tableName, column }]
+    });
 
-    const { name, type, isNullable, default: defaultValue, check, unique } = validated;
-    const nullable = isNullable ? '' : 'NOT NULL';
-    const defaultClause = defaultValue !== undefined ? `DEFAULT ${typeof defaultValue === 'string' ? `'${defaultValue}'` : defaultValue}` : '';
-    const checkClause = check ? `CHECK (${check})` : '';
-    const uniqueClause = unique ? 'UNIQUE' : '';
+    if (!result.success) return propagateError(result.failed?.[0], next);
+    res.json({ message: `Columna "${column.name}" añadida a "${tableName}".` });
 
-    const query = `
-      ALTER TABLE "${tableName}"
-      ADD COLUMN "${name}" ${type} ${nullable} ${defaultClause} ${checkClause} ${uniqueClause};
-    `;
-    await prisma.$executeRawUnsafe(query);
-    res.json({ message: `Columna "${name}" añadida a "${tableName}".` });
   } catch (error) {
     return propagateError(error, next);
   } finally {
@@ -186,11 +183,14 @@ const deleteColumn = async (req, res, next) => {
     validateTableName(tableName);
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'DROP_COLUMN', table: tableName, column: columnName, cascade: true }]
+    });
 
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "${tableName}" DROP COLUMN IF EXISTS "${columnName}" CASCADE;`
-    );
+    if (!result.success) return propagateError(result.failed?.[0], next);
     res.json({ message: `Columna "${columnName}" eliminada de "${tableName}".` });
   } catch (error) {
     return propagateError(error, next);
@@ -213,11 +213,14 @@ const renameColumn = async (req, res, next) => {
     }
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'RENAME_COLUMN', table: tableName, from: oldColumnName, to: newColumnName }]
+    });
 
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE "${tableName}" RENAME COLUMN "${oldColumnName}" TO "${newColumnName}";`
-    );
+    if (!result.success) return propagateError(result.failed?.[0], next);
     res.json({ message: `Columna renombrada a "${newColumnName}" en "${tableName}".` });
   } catch (error) {
     return propagateError(error, next);
@@ -237,9 +240,14 @@ const renameTable = async (req, res, next) => {
     validateTableName(newTableName);
 
     prisma = createPrismaClient(databaseUrl);
-    await ensureTableExists(prisma, tableName);
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'RENAME_TABLE', from: tableName, to: newTableName }]
+    });
 
-    await prisma.$executeRawUnsafe(`ALTER TABLE "${tableName}" RENAME TO "${newTableName}";`);
+    if (!result.success) return propagateError(result.failed?.[0], next);
     res.json({ message: `Tabla "${tableName}" renombrada a "${newTableName}".` });
   } catch (error) {
     return propagateError(error, next);

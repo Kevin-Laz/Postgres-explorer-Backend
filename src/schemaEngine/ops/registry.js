@@ -6,6 +6,7 @@ const changeColumnType = require('./changeColumnType');
 
 
 const createTable = require('./createTable');
+const dropTable = require('./dropTable');
 const addForeignKey = require('./addForeignKey');
 const dropForeignKey = require('./dropForeignKey');
 const updateForeignKey = require('./updateForeignKey');
@@ -18,6 +19,7 @@ const REGISTRY = {
   'CHANGE_COLUMN_TYPE': changeColumnType,
 
   'CREATE_TABLE': createTable,
+  'DROP_TABLE': dropTable,
   'ADD_FOREIGN_KEY': addForeignKey,
   'DROP_FOREIGN_KEY': dropForeignKey,
   'UPDATE_FOREIGN_KEY': updateForeignKey,

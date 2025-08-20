@@ -12,14 +12,47 @@ const applyCommands = require('../schemaEngine/applyCommands');
 const createTable = async (req, res, next) => {
   let prisma;
   try {
+    const { name, columns, databaseUrl } = req.body;
+
+    validateDatabaseUrl(databaseUrl);
+    validateTableName(name)
+
+    if (!Array.isArray(columns)) {
+      return next(new ValidationError('Las columnas no se han definido correctamente'));
+    }
+
+    prisma = createPrismaClient(databaseUrl);
+    
+    const result = await applyCommands({
+      prisma,
+      dryRun: false,
+      mode: 'allOrNothing',
+      commands: [{ op: 'CREATE_TABLE', name, columns }]
+    });
+
+    if (!result.success) {
+      // Unificar el primer error para la respuesta
+      const err = result.failed?.[0] || { code: 'create_table_failed', message: 'No se pudo crear la tabla' };
+      return propagateError(err, next);
+    }
+    res.status(200).json({ message: `Tabla "${name}" creada exitosamente.` });
+  
+  } catch (error) {
+    return propagateError(error, next);
+  } finally {
+    if (prisma) await prisma.$disconnect();
+  }
+};
+
+const deleteTable = async (req, res, next) => {
+  let prisma;
+  try {
     const { tableName } = req.params;
     const { databaseUrl, cascade, ifExist } = req.body;
 
     validateDatabaseUrl(databaseUrl);
     if (tableName) validateTableName(tableName);
-
     prisma = createPrismaClient(databaseUrl);
-    
     const result = await applyCommands({
       prisma,
       dryRun: false,
@@ -28,7 +61,7 @@ const createTable = async (req, res, next) => {
         op: 'DROP_TABLE',
         name: tableName,
         cascade: !!cascade,     // default: false
-        ifExists: !!ifExists    // default: false
+        ifExists: !!ifExist    // default: false  
       }]
     });
 
@@ -37,28 +70,6 @@ const createTable = async (req, res, next) => {
       return propagateError(err, next);
     }
 
-    res.json({ message: `Tabla "${tableName}" eliminada.` });
-  } catch (error) {
-    return propagateError(error, next);
-  } finally {
-    if (prisma) await prisma.$disconnect();
-  }
-};
-
-
-const deleteTable = async (req, res, next) => {
-  let prisma;
-  try {
-    const { tableName } = req.params;
-    const { databaseUrl } = req.body;
-
-    validateDatabaseUrl(databaseUrl);
-    if (tableName) validateTableName(tableName);
-    prisma = createPrismaClient(databaseUrl);
-    //Verificar si existe la tabla
-    await ensureTableExists(prisma, tableName);
-    //Eliminar la tabla
-    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
     res.json({ message: `Tabla "${tableName}" eliminada.` });
   } catch (error) {
     return propagateError(error, next);

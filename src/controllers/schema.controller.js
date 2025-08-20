@@ -60,6 +60,7 @@ const executeCommands = async (req, res, next) => {
         commands,
         dryRun: false,
         mode: mode || 'allOrNothing',
+        databaseUrl: databaseUrl
       });
     });
 

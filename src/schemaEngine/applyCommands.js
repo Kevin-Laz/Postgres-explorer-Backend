@@ -1,13 +1,14 @@
 const { ValidationError } = require('../errors');
 const { withOpResult, normalizeError } = require('./helpers/opResult');
 const { resolveOp } = require('./ops/registry');
+const createPrismaClient = require('../utils/createPrismaClient');
 
 /**
  * commands: [{ op: 'RENAME_TABLE', ... }, ...]
  * mode: 'allOrNothing' | 'bestEffort'
  * dryRun: true | false
  */
-async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNothing' }) {
+async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNothing', databaseUrl }) {
   const applied = [];
   const failed = [];
   const warnings = [];
@@ -18,7 +19,7 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
   }
 
   // Helper para ejecutar una sola op (dryRun o real)
-  const execOne = async (cmd) => {
+  const execOne = async (client, cmd) => {
     const impl = resolveOp(cmd?.op);
     if (!impl) {
       return withOpResult(cmd, 'ERROR', {
@@ -28,7 +29,7 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
     }
     try {
       // Validación/pre-checks
-      const pre = await impl.validate(prisma, cmd);
+      const pre = await impl.validate(client, cmd);
       if (!pre.ok) {
         return withOpResult(cmd, 'ERROR', pre.error);
       }
@@ -36,7 +37,7 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
         return withOpResult(cmd, 'OK', null, pre.warnings || []);
       }
       // Aplicar
-      const out = await impl.apply(prisma, cmd);
+      const out = await impl.apply(client, cmd);
       return withOpResult(cmd, 'OK', null, out.warnings || []);
     } catch (e) {
       return withOpResult(cmd, 'ERROR', normalizeError(e));
@@ -45,7 +46,7 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
 
   if (dryRun || mode === 'bestEffort') {
     for (const c of commands) {
-      const r = await execOne(c);
+      const r = await execOne(prisma, c);
       if (r.status === 'OK') {
         applied.push({ op: c.op, status: 'OK' });
         if (r.warnings?.length) warnings.push(...r.warnings);
@@ -56,15 +57,40 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
     return { success: failed.length === 0, applied, failed, warnings };
   }
 
-  // allOrNothing (transacción)
-  return await prisma.$transaction(async (tx) => {
+  // allOrNothing conexión única
+   // Si el prisma no viene de una transacción ejecutar directamente
+  if (prisma.$transaction !== undefined) {
     for (const c of commands) {
-      const r = await execOne(c);
+      const r = await execOne(prisma, c);
       if (r.status === 'OK') {
         applied.push({ op: c.op, status: 'OK' });
         if (r.warnings?.length) warnings.push(...r.warnings);
       } else {
-        // aborta transacción
+        return {
+          success: false,
+          applied,
+          failed: [{ status: 'ERROR', ...r.error }],
+          warnings
+        };
+      }
+    }
+    return { success: true, applied, failed: [], warnings };
+  }
+
+  // Prisma viene de una trasacción entonces usar otro cliente nuevo
+  // BEGIN/COMMIT/ROLLBACK
+
+  const txPrisma = createPrismaClient(databaseUrl);
+  const conn = txPrisma.$extends({}); // forzar nuevo cliente aislado
+
+  try {
+    await txPrisma.$executeRawUnsafe('BEGIN');
+    for (const c of commands) {
+      const r = await execOne(txPrisma, c);
+      if (r.status === 'OK') {
+        applied.push({ op: c.op, status: 'OK' });
+        if (r.warnings?.length) warnings.push(...r.warnings);
+      } else {
         throw new ValidationError(JSON.stringify({
           code: r.error?.code || 'op_failed',
           target: r.error?.target || null,
@@ -73,18 +99,23 @@ async function applyCommands({ prisma, commands, dryRun = true, mode = 'allOrNot
         }));
       }
     }
+    await txPrisma.$executeRawUnsafe('COMMIT');
     return { success: true, applied, failed: [], warnings };
-  }).catch((e) => {
-    // parsear error para exponer primer fallo
+  } catch (e) {
+    await txPrisma.$executeRawUnsafe('ROLLBACK').catch(() => {});
     let parsed;
     try { parsed = JSON.parse(e.message); } catch { parsed = null; }
     return {
       success: false,
       applied,
-      failed: parsed ? [{ status: 'ERROR', ...parsed }] : [{ status: 'ERROR', code: 'transaction_failed', message: e.message }],
+      failed: parsed
+        ? [{ status: 'ERROR', ...parsed }]
+        : [{ status: 'ERROR', code: 'transaction_failed', message: e.message }],
       warnings
     };
-  });
+  } finally {
+    await txPrisma.$disconnect();
+  }
 }
 
 module.exports = applyCommands;
